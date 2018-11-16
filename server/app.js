@@ -1,71 +1,108 @@
 // Smart Hydrate
 // Use Cases:
-//   1. Press button1 to start the system
-//   2. Press button1 to stop the alert.
-//   3. Press button1 to restart the system.
-//   4. Press setting button2 to choose/change the frequency of alert.
-
-
-// Scenario: when you do drink enough water which means the alert will not happen.
-// As I don't know how to use resistor in johnny-five, I only write the code for the ideal scenario, I only altered 
-// text showed on screen when it came to the alert scenario.
+//   1. Press setting to specify ratio liquid consumption across time
+//   2. Press start button to begin timer countdown
+//   3. Press pause to reload water or hold to stop play
+//   4. Read timer countdown
+//   5. Receive notice on screen, alert sound and/or sms message to Hydrate ASAP
+//   6. Watchdog timer resets whenever water level reading goes up
 
 var five = require("johnny-five");
-var board = new five.Board(), timer = 5;
 var songs = require('j5-songs');
-var alert = false, start = false;
+
+var board = new five.Board();
+var alert = false,
+  waterSensor, waterLevel,
+  startGame = false, pauseGame = false, playLevel = 1,
+  piezo, lcd, stopPauseStartButton, setSettingButton,
+  drinkDelta = 0, currentTime, setTime;
+
+var displayLevel = function(msg) {
+  lcd.clear();
+  lcd.cursor(0,0).print( msg );
+  lcd.cursor(1,0).print('Level: '+ playLevel)
+};
+var displayTime = function( msg ) {
+  currentTime = new Date();
+  setTime = new Date();
+  setTime.setSeconds( currentTime.getSeconds() + drinkDelta );
+
+  var lengthTime = setTime - currentTime;
+  var hours = Math.floor((lengthTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  var minutes = Math.floor((lengthTime % (1000 * 60 * 60)) / (1000 * 60));
+  var seconds = Math.floor((lengthTime % (1000 * 60)) / 1000);
+
+  lcd.clear();
+  lcd.cursor(0,0).print( msg );
+  if( lengthTime > 0 ) {
+    if( waterLevel <= 2 ) {
+      pauseGame = true;
+      drinkDelta = (playLevel+1) * 15;
+      lcd.clear();
+      lcd.cursor(0,0).print( 'Paused, Water Empty!' );
+      lcd.cursor(1,0).print( 'Refill Water');
+    } else {
+      lcd.cursor(1,0).print(hours + "h " + minutes + "m " + seconds + "s ");
+    }
+  } else {
+    lcd.cursor(1,0).print('Hydrate ASAP!');
+    if( !alert ) {
+      piezo.play( songs.load('mario-intro') );
+      alert = true;
+    }
+  }
+};
 
 board.on("ready", function() {
-  var piezo = new five.Piezo(10);
-  var led1 = new five.Led(7);
-  var led2 = new five.Led(13);
-  var stopStartAlert = new five.Button({
+  piezo = new five.Piezo(10);
+  waterSensor = new five.Sensor("A0");
+  waterSensor.on("change", function() {
+    if( this.scaleTo(0,10) > waterLevel ) { // new water reading > current, reset drinkDelta
+      drinkDelta  = (playLevel+1) * 15;
+    }
+    waterLevel = this.scaleTo(0,10);
+  });
+  lcd = new five.LCD({
+    controller: "PCF8574T"
+  });
+  stopPauseStartButton = new five.Button({
     pin: 2,
     isPullup: true
   });
-  var setTime = new five.Button({
+  stopPauseStartButton.on('press', function(){
+    if( !startGame ) {
+      drinkDelta  = (playLevel+1) * 15;
+      startGame = true;
+    } else {
+      pauseGame = !pauseGame;
+    }
+  });
+  stopPauseStartButton.on('hold', function() {
+    startGame = false;
+    drinkDelta = 1;
+    playLevel = 0;
+    alert = false;
+    displayLevel('Select Level');
+  });
+  setSettingButton = new five.Button({
     pin: 3,
     isPullup: true
   });
-
-  var l = new five.LCD({
-    controller: "PCF8574T"
-  });
-
-  stopStartAlert.on('press', function(){
-    if( alert ) {
-      alert = false;
-      led1.off();
-      led2.off();
-    } else {
-      start = true;
-      led2.on();
-
+  setSettingButton.on('press', function() {
+    if( startGame ) { // cannot change setting when game running
+      return;
     }
-  });
-  setTime.on('press', function() {
-    timer = timer + 5;
-    led2.on();
-  });
-
-  setInterval( function(){
-    if( start ) {
-      if( timer >= 0 ) {
-        led1.off();
-        var n = ('0' + timer--).slice(-2);
-        l.cursor(0, 0).print("Time Left 00:" + n + '           ');
-        if( timer === 0 ) { alert = true; }
-      } else {
-        if( alert ) {
-          l.cursor(0, 0).print('Good Habits!     ');
-          alert = false;
-          start = true;
-        }
-      }
-    } else {
-      var n = ('0' + timer).slice(-2);
-      l.cursor(0, 0).print("Level 1: 5s/ounce");
-      led1.off();
+    playLevel = playLevel + 1;
+    if( playLevel > 4 ) {
+      playLevel = 0;
     }
-  }, 1000);
+    displayLevel('Select Level');
+  });
+  displayLevel('Select Level');
 });
+setInterval( function() {
+  if( startGame && !pauseGame ) {
+    drinkDelta = drinkDelta - 1;
+    displayTime('Time Remaining');
+  }
+}, 1000);
