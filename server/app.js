@@ -55,12 +55,17 @@ var displayTime = function( msg ) {
 
 board.on("ready", function() {
   piezo = new five.Piezo(10);
-  waterSensor = new five.Sensor("A0");
-  waterSensor.on("change", function() {
-    if( this.scaleTo(0,10) > waterLevel ) { // new water reading > current, reset drinkDelta
+  waterSensor = new five.Sensor({
+    pin: 'A5',
+    freq: 1000
+  });
+  waterSensor.on("data", function(val) {
+    val = (val / 10).toFixed();
+    console.log( val, waterLevel);
+    if( val < waterLevel ) { // new water reading > current, reset drinkDelta
       drinkDelta  = (playLevel+1) * 15;
     }
-    waterLevel = this.scaleTo(0,10);
+    waterLevel = val;
   });
   lcd = new five.LCD({
     controller: "PCF8574T"
