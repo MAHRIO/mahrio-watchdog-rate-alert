@@ -24,7 +24,7 @@ var displayLevel = function(msg) {
 };
 var displayTime = function( msg ) {
   currentTime = new Date();
-  setTime = new Date();
+  setTime = new Date( currentTime.getTime() );
   setTime.setSeconds( currentTime.getSeconds() + drinkDelta );
 
   var lengthTime = setTime - currentTime;
@@ -35,20 +35,22 @@ var displayTime = function( msg ) {
   lcd.clear();
   lcd.cursor(0,0).print( msg );
   if( lengthTime > 0 ) {
-    if( waterLevel <= 2 ) {
-      pauseGame = true;
-      drinkDelta = (playLevel+1) * 15;
+    if( waterLevel > 100 ) {
+      drinkDelta = 0;
       lcd.clear();
-      lcd.cursor(0,0).print( 'Paused, Water Empty!' );
-      lcd.cursor(1,0).print( 'Refill Water');
+      lcd.cursor(0,0).print( 'Hurray! You met         ' );
+      lcd.cursor(1,0).print( 'your goal.           ');
+      startGame = false;
     } else {
       lcd.cursor(1,0).print(hours + "h " + minutes + "m " + seconds + "s ");
     }
   } else {
-    lcd.cursor(1,0).print('Hydrate ASAP!');
-    if( !alert ) {
-      piezo.play( songs.load('mario-intro') );
-      alert = true;
+    if( waterLevel < 100 ) {
+      lcd.cursor(1,0).print('Hydrate ASAP!');
+      if( !alert ) {
+        piezo.play( songs.load('mario-intro') );
+        alert = true;
+      }
     }
   }
 };
@@ -56,12 +58,11 @@ var displayTime = function( msg ) {
 board.on("ready", function() {
   piezo = new five.Piezo(10);
   waterSensor = new five.Sensor({
-    pin: 'A5',
+    pin: 'A0',
     freq: 1000
   });
   waterSensor.on("data", function(val) {
     val = (val / 10).toFixed();
-    console.log( val, waterLevel);
     if( val < waterLevel ) { // new water reading > current, reset drinkDelta
       drinkDelta  = (playLevel+1) * 15;
     }
